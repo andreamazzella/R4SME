@@ -1,0 +1,340 @@
+---
+title: "R for SME: Survival analysis (practical 3)"
+output: html_notebook
+---
+ *Part 1: Introduction*
+
+> A) Basics
+
+1.  Shift+click on this link, great tutorial:
+https://www.youtube.com/watch?v=Wmc8bQoL-J0
+
+
+2. Install these packages if you haven't already
+```{r}
+install.packages("survival")
+install.packages("surviminer")
+install.packages("magrittr")
+install.packages("lubridate")
+install.packages("haven")
+install.packages("tidyverse")
+```
+
+
+3. Load packages
+```{r}
+library(survival)
+library(survminer) # to get Kaplan-Meier plots in a ggplot-like style
+library(magrittr) # for the %$% pipe
+library(lubridate) # for easier calculations with dates
+library(haven) # to import dta files
+library(tidyverse) # as usual
+```
+
+
+> B) Data exploration
+
+4. Load the "ovarian" dataframe and explore it. It contains data from a trial comparing two treatments for ovarian cancer.
+
+- How many observations does it have?
+- How many variables?
+- What do these variables code?
+- Which type are these variables?
+- Which way of exploring data do you prefer?
+```{r}
+?ovarian #to get more information on the dataframe
+
+View(ovarian)
+glimpse(ovarian)
+summary(ovarian)
+```
+
+5. Bonus freestyle programming: as all the variables are coded as "double" type (=continuous) but some of them are binary or catgeorical, how would you change them into the appropriate type?
+```{r}
+
+```
+
+
+> C) Create a survival item
+
+In the R {survival} package, the equivalent command of Stata's "stset" is *Surv()*. Unlike Stata, it doesn't require dates as input; it requires pre-calculated time intervals (so, number of days). In the ovarian dataset, this is already (conveniently...) calculated for you.
+```{r}
+ovarian_surv <-
+  Surv(time = ovarian$futime, #days until event/censoring
+       event = ovarian$fustat) # outcome (usually 0 = no outcome, 1 = outcome; or TRUE/FALSE, or 1/2)
+
+ovarian_surv
+```
+As you can see, Surv() creates a list of numbers (which represent the days) followed by a "+" if the observation is censored.
+
+
+> D) Create a survival table
+
+*survfit()* requires a formula containing your survival item. For the simplest survival table containing the whole dataset, this is "~ 1".
+- How many deaths occurred?
+- What was the median time of death in years?
+
+```{r}
+survfit(ovarian_surv ~ 1, data = ovarian)
+```
+
+If you want to divide the cohort into two groups, for example for performance status:
+```{r}
+survfit(ovarian_surv ~ ecog.ps, data = ovarian)
+```
+
+> E) Create Kaplan-Meier plots
+
+*ggsurvplot()* is a function from {survminer} that allows you to plot KM curves using ggplot's functions.
+It takes a survfit() table as an object.
+The following code generates the simplest KM plot, with the whole cohort.
+- What do you think the "+" represent in the graph?
+```{r}
+ggsurvplot(fit = survfit(ovarian_surv ~ 1, data = ovarian))
+```
+The "+" represent censored observations.
+You can see that, unlike Stata, the 95% CI are automatically shown in the plot.
+
+In order to stratify by a categorical variable, you need to change the formula within the survfit() function.
+```{r}
+ggsurvplot(fit = survfit(ovarian_surv ~ ecog.ps, data = ovarian))
+```
+
+There are many options to customise these plots.
+- What do these do?
+- What do you think the p-value represents?
+- Why are the confidence intervals huge?
+- How much cooler is this than with Stata?
+```{r}
+ggsurvplot(
+  fit = survfit(ovarian_surv ~ ecog.ps, data = ovarian),
+  pval = TRUE,
+  censor = FALSE,
+  xlab = "Days",
+  legend.title = "ECOG performance status",
+  legend.labs = c("1", "2")
+)
+```
+
+You can also change the direction of the curve to upwards with the option "fun" set to "event".
+- What else changes in the graph?
+```{r}
+ggsurvplot(
+  fit = survfit(ovarian_surv ~ ecog.ps, data = ovarian),
+  fun = "event",
+  pval = TRUE,
+  censor = FALSE,
+  xlab = "Days",
+  legend.title = "ECOG performance status",
+  legend.labs = c("1", "2")
+)
+```
+
+If you want more info on ggsurvplot(), check out this cheatsheet: https://rpkgs.datanovia.com/survminer/survminer_cheatsheet.pdf.
+
+
+> F) Calculating the probability of survival beyond a certain number of years
+
+You use summary() on survfit and you specify the amount of _days_.
+```{r}
+summary(survfit(ovarian_surv ~ 1, data = ovarian), times = 365.25)
+```
+
+- What is the probability of survival after 2 years?
+```{r}
+
+```
+
+To check the _median_ probability of survival, you simply launch survfit() as in point D) above.
+
+> G) Log-rank test
+
+You use *survdiff()* with a formula similar to the one you used in survfit() above. Obviously you have to group the data by another categorical variable, you can't run the test on the whole dataset.
+- Is survival different according to performance status?
+```{r}
+survdiff(ovarian_surv ~ ecog.ps, data = ovarian)
+```
+
+
+
+
+
+
+*Part 2: SME practical 3*
+> 1
+
+Read the Trinidad data (trinmlsh.dta; you need to put it into the folder where this .rmd file is) and familiarise yourself with it.
+- What are the outcome variables?
+- What are the follow-up time variables and which type are they?
+- Bonus question: why is the way in which variables such as "smokenum" are coded slightly problematic?
+```{r}
+
+```
+
+SPOILER - code below
+```{r}
+# Import the dataset
+trin <- read_dta("./trinmlsh.dta")
+
+#Familiarise yourself with the data
+View(trin)
+glimpse(trin)
+summary(trin)
+```
+
+> 2
+
+Before we can make a survival curve, we need to Surv() the data. But the trinindad dataset does not have the times in the format that Surv() wants.
+Examine the overall survival experience of these men, i.e. analyse the outcome called death.
+Use the Kaplan-Meier method to produce a survival curve for overall mortality in the complete cohort.
+
+
+First, you need to calculate the difference in years between the dates of entering and exiting the study. Because calculations involving dates are weird, you need to use some special code, like {lubridate}'s *%--%* pipe, which calculates a time interval.
+```{r}
+trin <- trin %>%
+  mutate(followup =
+           as.duration(timein %--% timeout) / dyears(1))
+```
+
+Then, you can create a survival object with Surv(), as you did earlier.
+```{r}
+trinsurv <- trin %$% Surv(time = followup,
+                          event = death)
+```
+
+Now you can make a Kaplan-Meier plot for overall mortality.
+```{r}
+
+```
+
+Code:
+```{r}
+ggsurvplot(
+  fit = survfit(trinsurv ~ 1, data = trin),
+  censor = F,
+  xlab = "Years"
+  )
+```
+
+> 3
+
+Examine the cumulative survival probability among these patients at 1, 3, and 5 years.
+```{r}
+
+```
+
+Code:
+```{r}
+summary(survfit(trinsurv ~ 1, data = trin), times = c(1,3,5))
+# c(1,3,5) means: do this for time 1, time 3, and time 5.
+```
+
+
+> 4
+
+Make the same K-M curve but without confidence intervals.
+```{r}
+
+```
+
+Code:
+```{r}
+ggsurvplot(
+  fit = survfit(trinsurv ~ 1, data = trin),
+  censor = F,
+  conf.int = F,
+  xlab = "Years"
+  )
+```
+
+
+
+> 5
+
+From smokenum, create a new variable called "smokstatus" that identifies the participants who were active smokers at entry into the study.
+Tip: use mutate() and as.ordered().
+```{r}
+
+```
+
+Code:
+```{r}
+# Transform smokenum type into ordered categorical
+trin <- trin %>% mutate(smokenum = as.ordered(smokenum))
+
+# Unify non-smokers + ex-smokers vs current smokers
+trin <- trin %>%
+  mutate(smokstatus = as.ordered(
+    case_when(
+      smokenum == 0 ~ "0",
+      smokenum == 1 ~ "0",
+      smokenum == 2 ~ "1",
+      smokenum == 3 ~ "1",
+      smokenum == 4 ~ "1",
+      smokenum == 5 ~ "1"
+    )
+  ))
+
+# Label the values in this new variable
+trin$smokstatus<-
+ factor(trin$smokstatus,
+   levels = c(0,1),
+   labels = c("non-smoker", "active smoker"))
+
+# Check you've done it well
+trin %$% table(smokstatus, smokenum)
+  
+```
+
+Now compare the survival curves of active smokers vs non-smokers.
+- Do they look different?
+```{r}
+
+```
+
+Code:
+```{r}
+ggsurvplot(
+  fit = survfit(trinsurv ~ smokstatus, data = trin),
+  censor = F,
+  conf.int = F,
+  xlab = "Years",
+  legend.title = "Smoking status",
+  legend.labs = c("non-smokers", "active smokers")
+  )
+```
+
+> 6
+
+Use a log-rank test to compare these two survival curves.
+- Is there evidence to say they are different?
+```{r}
+
+```
+
+Code:
+```{r}
+survdiff(trinsurv ~ smokstatus, data = trin)
+```
+
+> 7-16
+Simply the same functions with a different dataset.
+
+> 17
+
+Plot cumulative mortality instead of cumulative survival (= get the curve to go upwards)
+```{r}
+
+```
+
+Code:
+```{r}
+ggsurvplot(
+  fit = survfit(trinsurv ~ smokstatus, data = trin),
+  fun = "event",
+  pval = TRUE,
+  censor = FALSE,
+  xlab = "Years",
+  legend.title = "Smoking status",
+  legend.labs = c("non-smokers", "active smokers"))
+```
