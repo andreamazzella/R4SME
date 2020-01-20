@@ -34,7 +34,7 @@ library(tidyverse) # as usual
 
 > B) Data exploration
 
-4. Load the "ovarian" dataframe and explore it. It contains data from a trial comparing two treatments for ovarian cancer.
+4. Load the "ovarian" dataframe (part of {survival}) and explore it. It contains data from a trial comparing two treatments for ovarian cancer.
 
 - How many observations does it have?
 - How many variables?
@@ -172,9 +172,10 @@ Read the Trinidad data (trinmlsh.dta; you need to put it into the folder where t
 ```
 
 SPOILER - code below
+- Labels of categorical variables have been lost in the importation, I have no idea how to fix this, do you?
 ```{r}
 # Import the dataset
-trin <- read_dta("./trinmlsh.dta")
+trin <- read.dta("./trinmlsh.dta")
 
 #Familiarise yourself with the data
 View(trin)
@@ -318,7 +319,8 @@ survdiff(trinsurv ~ smokstatus, data = trin)
 ```
 
 > 7-16
-Simply the same functions with a different dataset.
+
+(Simply the same functions with a different dataset)
 
 > 17
 
@@ -338,3 +340,7 @@ ggsurvplot(
   legend.title = "Smoking status",
   legend.labs = c("non-smokers", "active smokers"))
 ```
+
+> 18+
+
+(Only appliable to Stata's *stset* function)
