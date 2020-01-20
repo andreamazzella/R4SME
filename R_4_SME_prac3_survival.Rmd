@@ -16,7 +16,7 @@ install.packages("survival")
 install.packages("surviminer")
 install.packages("magrittr")
 install.packages("lubridate")
-install.packages("haven")
+install.packages("readstata13")
 install.packages("tidyverse")
 ```
 
@@ -27,7 +27,7 @@ library(survival)
 library(survminer) # to get Kaplan-Meier plots in a ggplot-like style
 library(magrittr) # for the %$% pipe
 library(lubridate) # for easier calculations with dates
-library(haven) # to import dta files
+library(readstata13) # to import dta files
 library(tidyverse) # as usual
 ```
 
@@ -49,8 +49,34 @@ glimpse(ovarian)
 summary(ovarian)
 ```
 
-5. Bonus freestyle programming: as all the variables are coded as "double" type (=continuous) but some of them are binary or catgeorical, how would you change them into the appropriate type?
+5. Bonus freestyle programming: as all the variables are coded as "double" type (=continuous) but some of them are binary or catgeorical.
+- How would you change them into the appropriate type?
+- How would you label them?
 ```{r}
+
+```
+
+Spoiler: code below
+```{r}
+ovarian$fustat <-
+  factor(ovarian$fustat,
+         levels = c(0, 1),
+         labels = c("alive", "dead"))
+
+ovarian$resid.ds <-
+  factor(ovarian$resid.ds,
+         levels = c(1, 2),
+         labels = c("absent", "present"))
+
+ovarian$rx <-
+  factor(ovarian$rx,
+         levels = c(1, 2),
+         labels = c("group 1", "group 2"))
+
+ovarian$ecog.ps <-
+  factor(ovarian$ecog.ps,
+         levels = c(1, 2),
+         labels = c("better", "worse"))
 
 ```
 
@@ -73,7 +99,6 @@ As you can see, Surv() creates a list of numbers (which represent the days) foll
 *survfit()* requires a formula containing your survival item. For the simplest survival table containing the whole dataset, this is "~ 1".
 - How many deaths occurred?
 - What was the median time of death in years?
-
 ```{r}
 survfit(ovarian_surv ~ 1, data = ovarian)
 ```
@@ -171,11 +196,10 @@ Read the Trinidad data (trinmlsh.dta; you need to put it into the folder where t
 
 ```
 
-SPOILER - code below
-- Labels of categorical variables have been lost in the importation, I have no idea how to fix this, do you?
+Code below
 ```{r}
 # Import the dataset
-trin <- read.dta("./trinmlsh.dta")
+trin <- read.dta13("./trinmlsh.dta", nonint.factors = TRUE)
 
 #Familiarise yourself with the data
 View(trin)
@@ -261,30 +285,23 @@ Tip: use mutate() and as.ordered().
 Code:
 ```{r}
 # Transform smokenum type into ordered categorical
-trin <- trin %>% mutate(smokenum = as.ordered(smokenum))
+trin <- trin %>% mutate(smokenum = as.factor(smokenum))
 
 # Unify non-smokers + ex-smokers vs current smokers
 trin <- trin %>%
-  mutate(smokstatus = as.ordered(
+  mutate(smokstatus = as.factor(
     case_when(
-      smokenum == 0 ~ "0",
-      smokenum == 1 ~ "0",
-      smokenum == 2 ~ "1",
-      smokenum == 3 ~ "1",
-      smokenum == 4 ~ "1",
-      smokenum == 5 ~ "1"
+      smokenum == "non-smok" ~ "non-smoker",
+      smokenum == "ex-smoke" ~ "non-smoker",
+      smokenum == "1-9 cigs" ~ "active smoker",
+      smokenum == "10-19 cigs" ~ "active smoker",
+      smokenum == "20-29 cigs" ~ "active smoker",
+      smokenum == "30+ cigs" ~ "active smoker"
     )
   ))
 
-# Label the values in this new variable
-trin$smokstatus<-
- factor(trin$smokstatus,
-   levels = c(0,1),
-   labels = c("non-smoker", "active smoker"))
-
 # Check you've done it well
 trin %$% table(smokstatus, smokenum)
-  
 ```
 
 Now compare the survival curves of active smokers vs non-smokers.
