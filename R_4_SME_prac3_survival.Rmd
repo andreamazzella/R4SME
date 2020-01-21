@@ -58,11 +58,6 @@ summary(ovarian)
 
 Spoiler: code below
 ```{r}
-ovarian$fustat <-
-  factor(ovarian$fustat,
-         levels = c(0, 1),
-         labels = c("alive", "dead"))
-
 ovarian$resid.ds <-
   factor(ovarian$resid.ds,
          levels = c(1, 2),
@@ -91,7 +86,7 @@ ovarian_surv <-
 
 ovarian_surv
 ```
-As you can see, Surv() creates a list of numbers (which represent the days) followed by a "+" if the observation is censored.
+As you can see, Surv() creates a list of numbers (which represent the days) followed by a "+" if the observation is censored. These numbers are the equivalent of the _t variable that Stata creates once you stset your dataset.
 
 
 > D) Create a survival table
