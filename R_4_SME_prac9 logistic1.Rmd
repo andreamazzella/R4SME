@@ -1,0 +1,145 @@
+---
+title: "R for SME: practical 9 - Logistic regression 1"
+author: Andrea Mazzella
+output: html_document
+---
+> 0 Basics
+
+Install these packages if you haven't already
+```{r}
+install.packages("readstata13") 
+install.packages("epiDisplay") 
+install.packages("magrittr")
+install.packages("tidyr")
+install.packages("dplyr")
+```
+
+Load packages
+```{r}
+library(readstata13)
+library(epiDisplay)
+library(magrittr)
+library(tidyr)
+library(dplyr)
+```
+> 1
+
+Make sure you have the mortality.dta dataset in the same folder as this .rmd
+
+> 2
+
+Import data
+```{r}
+mortality<-read.dta13("./mortality.dta", nonint.factors = T)
+```
+
+Explore data
+```{r}
+head(mortality)
+glimpse(mortality)
+summary(mortality)
+View(mortality)
+```
+
+> 3
+
+Outcome variable: died (3-year-mortality; binary, 0/1)
+Exposure variable: vimp (visual impairment; binary, "Normal" / "Visually impaired")
+- Examine the association between visual impairment and death
+```{r}
+# Frequency table with %
+mortality %$% tabpct(vimp, died, percent = "row", graph = F)
+
+# OR
+mortality %$% cc(vimp, died, graph = F)
+```
+
+> 4
+
+Perform a logistic regression to examine the association between visual impairment and death.
+```{r}
+# Logistic regression of a binary exposure
+
+logit_vimp <- glm(died ~ vimp, data = mortality, family = binomial()) # create the model
+
+logistic.display(logit_vimp) # get a more readable output
+```
+Output:
+- OR with 95%CI for outcome in exposed vs unexposed, Wald's test and LR-test p-value
+- (final) log-likelihood - (no intermediate iterations shown in R, unlike in stata)
+- number of observations
+- AIC value
+
+> 6
+
+Unlike Stata, R already gives you the answers in OR - no need to show useless log(OR).
+
+> 8
+
+Explore the association between microfilaria and death with crosstabulation:
+- Exposure: microfilarial load/mg - mfgrp (categorical variable: Uninfected, <10, 10-49, 50, NA)
+```{r}
+mortality %$% summary(mfgrp)
+
+mortality %$% tabpct(mfgrp, died, percent = "row", graph = F)
+```
+
+
+> 9
+
+Now explore the same with logistic regression.
+Unlike Stata, R understands that this variable is categorical, so the formula is the same as for a binary variable.
+
+```{r}
+logit_mfgrp <- glm(died ~ mfgrp,
+                 data = mortality,
+                 family = binomial())
+logistic.display(logit_mfgrp)
+```
+
+> 13
+
+To perform a likelihood ratio test (LRT), you need to use lrtest() to divide the log likelihood from a logistic regression model *with* the variable (that you have already defined) and the log likelihood from a logistic regression model *without* the variable - that you need to calculate now.
+
+Caution: mfgrp has missing data, so this new model will have more observations than the first - and the LRT test can only work when the two models have the same number of observations. So you need to 
+```{r}
+# Check for missing values
+mortality %$% summary(mfgrp)
+
+# Logistic regression model without the covariate (and removing observations with a missing value in mfgrb)
+logit_0 <- mortality %>%
+  drop_na(mfgrp) %>%
+  glm(died ~ 1,
+      data = .,
+      family = binomial())
+
+# Likelihood ratio test (LRT)
+lrtest(logit_0,logit_mfgrp)
+```
+
+> 14
+
+Run a logistic regression model to check the association of age and death.
+Exposure variable: agegrp (categorical: 15-34, 35-54, 55-64, 65+)
+```{r}
+# Check for missing values
+mortality %$% summary(agegrp)
+
+# Logistic regression model for age
+logit_age <- mortality %>%
+  glm(died ~ agegrp,
+      data = .,
+      family = binomial())
+logistic.display(logit_age)
+```
+
+How do we use two exposure variables in a logistic regression model?
+- Use both visual impairment (vimp) and age (agegrp)
+```{r}
+# Logistic regression model with 2+ exposures
+logit_vimp_age <- mortality %>%
+  glm(died ~ vimp + agegrp,
+      data = .,
+      family = binomial())
+logistic.display(logit_vimp_age)
+```
