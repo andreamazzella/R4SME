@@ -1,0 +1,275 @@
+---
+title: "R for SME: Logistic regression 2 (practical 10)"
+author: Andrea Mazzella
+output: html_document
+---
+
+*Part 1: mortality*
+
+> 0 Basics
+
+Install these packages if you haven't already
+```{r}
+install.packages("readstata13") 
+install.packages("epiDisplay") 
+install.packages("magrittr")
+install.packages("tidyr")
+install.packages("dplyr")
+```
+
+Load packages
+```{r}
+library(readstata13)
+library(epiDisplay)
+library(magrittr)
+library(tidyr)
+library(dplyr)
+```
+
+
+Make sure you have the mortality.dta dataset in the same folder as this .rmd file.
+```{r}
+# Import data
+mortality<-read.dta13("./mortality.dta", nonint.factors = T)
+```
+
+```{r}
+# Explore data
+head(mortality)
+glimpse(mortality)
+summary(mortality)
+View(mortality)
+```
+
+> 1
+
+Does onchocercal infection appear to be associate with death?
+```{r}
+# Cross-tabulate "died" and "mfpos"
+mortality %$% tabpct(died, mfpos, percent = "row", graph = F)
+```
+
+Run a logistic regression model to estimate the crude OR for onchocercal infection.
+```{r}
+# Logistic regression
+glm(died ~ mfpos,
+    data = mortality,
+    family = binomial()) %>%
+  logistic.display()
+
+# Alternative: chi2 test
+mortality %$% cc(died, mfpos, graph = F)
+```
+Crude OR for death in infected vs non-infected = 1.63 (1.08-2.48).
+Wald's test, p = 0.021
+Chi2 test, p = 0.02
+
+> 2 
+
+Let's check if age is a potential confounder. Is our exposure (onchocerchal infection) somehow associated with age?
+```{r}
+# Cross-tabulate mfpos against agegrp
+mortality %$% tabpct(agegrp, mfpos, percent = "col", graph = F)
+```
+
+Yes, it looks like the older people are affected more frequently. So we might analyse age group as a potential confounder.
+
+> 3
+
+Now stratify this association by age group.
+```{r}
+# Stratified 2x2 tables
+mortality %>%
+  filter(agegrp == "15-34") %$% 
+  tabpct(died, mfpos, percent = "col", graph = F)
+
+mortality %>%
+  filter(agegrp == "35-54") %$% 
+  tabpct(died, mfpos, percent = "col", graph = F)
+
+mortality %>%
+  filter(agegrp == "55-64") %$% 
+  tabpct(died, mfpos, percent = "col", graph = F)
+
+mortality %>%
+  filter(agegrp == "65+") %$% 
+  tabpct(died, mfpos, percent = "col", graph = F)
+```
+
+Let's get a summary estimate of the association between our exposure and our outcome, accounting for age. First, let's do it the old-fashioned way with dear Mantel-Haenszel.
+```{r}
+# Mantel-Haenszel OR and chi2 test
+mortality %$% 
+  mhor(died, mfpos, agegrp, graph = F)
+```
+- The MHOR for death in infected vs non-infected, accounting for age, is 1.50 (0.98-2.30); compare with crude 1.63 (1.08-2.48) from the logistic regression / chi2 test. It appears that age group is indeed a confounder in this association.
+- Whilst the stratum-specific ORs are dissimilar, their CIs overlap, and the homogeneity test has a large p-value. Therefore, age group is not an effect modifier in the relation between infection and death.
+- Now that we have adjusted for age, the p-value for the chi2 test has increased to 0.06.
+
+> 4
+
+Now let's do the same but with logistic regression.
+```{r}
+# Logistic regression with a confounder
+glm(died ~ mfpos + agegrp,
+    data = mortality,
+    family = binomial()) %>% 
+  logistic.display()
+```
+- Unlike Stata, R also gives you the crude OR. 
+- The adjusted OR are very similar to the ones calculated with MH.
+- There's also a Wald's test p-value and a LR-test p-value.
+
+> 5
+
+(Summarise the results of your analysis)
+
+> 6
+
+Now let's run a more complex model, that also includes visual impairment (vimp).
+```{r}
+# Logistic regression with two confounders
+glm(died ~ vimp + mfpos + agegrp,
+    data = mortality,
+    family = binomial()) %>% 
+  logistic.display()
+```
+- The OR associated with vimp means: once you account for infection and age group, the OR of death in visual impairment is 2.28 (1.44-3.58), and there is very strong evidence for this association (Wald's p < 0.001).
+- Does onchocercal infection appear to confound the association between visual impairment and odds of death?
+
+> 7
+
+- The OR associated with mfpos means: once you account for visual impairment and age group, the OR of death in microfilarial infection is 1.46 (0.95-2.23). There is weak evidence for this association (Wald's p = 0.09).
+
+> 8
+
+Perform a likelihood ratio test of the H0 that, after accounting for *age* and onchocercal infection, there is no association between visual impairment and odds of death.
+```{r}
+# Create the first model with all confounders
+logit_vimp_mfpos_agegrp <- glm(died ~ vimp + mfpos + agegrp,
+                               data = mortality,
+                               family = binomial())
+
+# Create a simpler regression without the exposure
+logit_mfpos_agegrp <- glm(died ~ mfpos + agegrp,
+                  data = mortality,
+                  family = binomial())
+
+# Likelihood ratio test
+lrtest(logit_vimp_mfpos_agegrp, logit_mfpos_agegrp)
+
+```
+- The LRT p < 0.001. Therefore there is very strong evidence for an association between visual impairment and odds of death, after accounting for age and onchocercal infection.
+- We could also have done a Wald's test (and I think this was already in the  logistic model at question 6, along with a LRT!)
+
+
+> 9
+
+Perform a likelihood ratio test of the H0 that, after accounting for onchocercal infection and *visual impairment*, there is no association between visual impairment and odds of death.
+```{r}
+# Create a simpler regression without age
+logit_vimp_mfpos <- glm(died ~ vimp + mfpos,
+                        data = mortality,
+                        family = binomial())
+
+# LRT
+lrtest(logit_vimp_mfpos_agegrp, logit_vimp_mfpos)
+```
+The LRT p << 0.001. Therefore there is very, *very* strong evidence for an association between age and odds of death (don't you say?) after accounting for visual impairment and onchocercal infection.
+- It wouldn't have been possible to use a Wald's test, because the age group variable is not binary. And if you check in the output of the model at question 6, there is no single Wald's test, but there is only a LRT.
+
+> 10
+
+What do you conclude about the relationship between vimp and death?
+
+*Part 2: Mwanza*
+
+```{r}
+# Import the dataset
+mwanza <- read.dta13("./mwanza.dta", nonint.factors = TRUE)
+```
+
+```{r}
+#Familiarise yourself with the data
+head(mwanza)
+glimpse(mwanza)
+summary(mwanza)
+```
+The ed variable represents education but it's represented in four different categories. We need to transform it into a binary variable.
+```{r}
+# Tabulate all possible values of ed
+mwanza %$% table(ed)
+
+# Recategorise and label education level
+mwanza <- mwanza %>%
+  mutate(ed2 = as.factor(
+    case_when(
+      ed == 1 ~ "none",
+      ed == 2 ~ "any formal",
+      ed == 3 ~ "any formal",
+      ed == 4 ~ "any formal"
+    )
+  ))
+
+# Check it worked ok
+mwanza %$% table(ed,ed2)
+```
+
+> 11
+
+Cross-tabulate binary education against HIV infection and get the crude OR.
+
+```{r}
+# 2x2 table with crude OR
+mwanza %$% cc(case, ed2, graph = F)
+```
+
+> 12
+
+We need to use the religion variable, but let's make sure that there are no missing values first.
+
+```{r}
+mwanza %$% table(rel)
+
+# Replace rel "9" with "NA"
+mwanza$rel <- na_if(mwanza$rel, 9)
+```
+
+> 13
+
+Estimate the OR for HIV/education adjusted for religion, using the Mantel-Haenszel approach
+```{r}
+# M-H OR
+mwanza %$% mhor(case, ed2, rel, graph = F)
+```
+- The M-H-adjusted OR is 0.52 (0.35-0.77). There is strong evidence for this association (M-H chi2 p = 0.001).
+
+> 14
+
+Let's do the same with logistic regression
+
+```{r}
+# Create a model controlling for religion
+logit_confounder <- glm(case ~ ed2 + rel,
+                        data = mwanza,
+                        family = binomial())
+logistic.display(logit_confounder)
+```
+- The adjusted OR is 0.49 (0.34,0.72). p < 0.001. This is similar to the MH results above.
+
+> 15
+
+Perform a LRT on the null hypothesis that, after controlling for religion, there is no association between education and HIV status.
+
+```{r}
+# Create a crude model excluding the missing value in the religion variable
+logit_crude <- mwanza %>%
+  drop_na(rel) %>%
+  glm(case ~ ed2,
+      data = .,
+      family = binomial())
+
+# LRT
+lrtest(logit_confounder, logit_crude)
+```
+- LRT, p < 0.001
