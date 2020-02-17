@@ -1,0 +1,191 @@
+---
+title: "R for SME 13: Matched case-control studies"
+author: Andrea Mazzella [link](https://github.com/andreamazzella)
+output: html_notebook
+---
+
+## Basics
+```{r Load packages}
+library(haven)
+library(epiDisplay)
+library(magrittr)
+library(survival) # for conditional regression
+library(dplyr)
+```
+
+#Part 1: individual matching (paired data)
+
+## 1: Data import and exploration
+
+Make sure you have the diabraz.dta and diabraz2 datasets in the same folder as this .rmd file.
+```{r - Import}
+diabraz <- read_dta("./diabraz.dta")
+diabraz2 <- read_dta("./diabraz2.dta")
+```
+
+Explore the data in diabraz. We're interested in variables "bf" and "bwtgp".
+- How many infants do you have data for?
+```{r - Explore}
+View(diabraz)
+glimpse(diabraz)
+summary(diabraz)
+```
+- Data management nightmare - they're all doubles but they contain integers which code for either binary/categorical or continuous variables. Aaaand there are no labels. *Thanks, diabraz!*
+  From the instructions:
+  - "case" = "death secondary to diarrhoea"
+  - "bf" = breastfed (yes, no)
+  - "bwtgp" = birthweight group (>=3kg, <3kg)
+We won't recode these now because we will need them in a special format for a function below.
+
+- 172 observations
+
+- How many cases (deaths from diarrhoea) and how many controls?
+- What does "set" refer to?
+```{r}
+diabraz %$% table(case)
+diabraz %$% table(case, set)
+```
+- 86 cases and 86 controls
+- each "set" consists of a pair of 1 case and 1 control
+
+## 2, 3: Matched analysis for breastfeeding
+
+Now let's create a matched table, which is a 2x2 table with cases in the columns, controls in the rows. Each cell will contain the number of pairs with a given combination of exposure and outcome.
+
+The function is epiDisplay::matchTab(); it takes as arguments, in this order:
+- the case variable,
+- the binary exposure variable (coded as 0/1),
+- the pair variable
+
+```{r Matched table}
+# Recode bf variable
+diabraz %<>%
+  mutate(breastfed = as.factor(case_when(bf == 1 ~ 0,
+                                         bf == 2 ~ 1)))
+diabraz %$% table(bf, breastfed)
+
+# Create matched table and get OR
+diabraz %$% matchTab(case, breastfed, set)
+
+# chi2 test
+## brace yourself for a huge (mostly useless) table
+diabraz %$% epiDisplay::mhor(case, breastfed, set, graph = F)
+```
+- There are 24 pairs in which both the case and the control were not breastfed,
+- 6 pairs in which the control was breastfed but not the case.
+- 29 pairs in which the case was breastfed but not the contorl,
+- 27 pairs in which neither case nor control was breastfed
+NB: unlike Stata, this R command also calculates the OR:
+- OR by MH method = 4.83, 95%CI 2.01 - 11.64
+- chi2 = 15.1, p < 0.001
+
+## 4: Matched analysis for birthweight
+
+Now do the same for birthweight (bwtgp) and diarrhoea mortality.
+```{r Matched table}
+# Recode bwtgp variable
+diabraz %<>%
+  mutate(birthweight = as.factor(case_when(bwtgp == 1 ~ 0,
+                                           bwtgp == 2 ~ 1)))
+diabraz %$% table(bwtgp, birthweight)
+
+# Create matched table and get OR
+diabraz %$% matchTab(case, birthweight, set)
+
+# chi2 test
+diabraz %$% epiDisplay::mhor(case, birthweight, set, graph = F)
+```
+- OR by MH = 1.39 (0.76 - 2.55)
+- chi2 = 1.14, p = 0.29
+
+## 5: What if we did an unmatched analysis?
+
+Construct unmatched tables and calculate unmatched estimates of the ORs with cc().
+What is the effect of ignoring matching?
+Why is it not the same in both exposures?
+
+```{r}
+diabraz %$% cc(case, breastfed, graph = F)
+diabraz %$% cc(case, birthweight, graph = F)
+```
+- It gives a different estimate of the OR
+
+
+## 6: Conditional regression
+
+Let's analyse the association between breastfeeding and diarrhoeal mortality (from question 2/3) with conditional regression.
+The function is clogit() from {survival}. It's very similar to glm; you only need to specify the pair variable in strata(); there's no need to specify the family.
+
+```{r}
+clogit(case ~ breastfed + strata(set),
+       data = diabraz) %>%
+  clogistic.display()
+```
+- OR 4.83 (2.01,11.64): same result as in question 2/3.
+- Wald's test p < 0.001
+
+And now let's do the same for birthweight (same as question 4 but with conditional regression).
+```{r}
+clogit(case ~ birthweight + strata(set),
+       data = diabraz) %>%
+  clogistic.display()
+```
+- Again, equivalent OR results.
+
+## 7: A more complex dataset
+
+Explore the data in diabraz2, which has the same variables as diabraz.
+- How many cases and how many controls?
+```{r}
+diabraz2 %$% table(case)
+diabraz2 %$% table(case, set)
+```
+- There are 2 controls for each case.
+
+Create a matched table. In this table, each cell refers to a group of 1 case and its 2 controls.
+For some reason in this dataset breastfeeding has been coded the other way round: 1 means breastfed, 2 means not breastfed. So we need to swap these. *Thanks, diabraz2!*
+```{r Matched table}
+# Recode values of bf
+diabraz2 %<>% mutate(breastfed = as.factor(case_when(bf == 1 ~ 1,
+                                                     bf == 2 ~ 0)))
+diabraz2 %$% table(bf, breastfed)
+
+# Create matched table and get OR
+diabraz2 %$% matchTab(case, breastfed, set)
+
+# chi2 test
+diabraz2 %$% epiDisplay::mhor(case, breastfed, set, graph = F)
+```
+- Interpret all the cells' values.
+- Calculate how many total cases. *SUM(table)?*
+- How many cases are breastfed? *21+24+5?*
+- OR-MH = 4.06
+- OR (MLE) = 3.79 (2.47-5.82)
+- chi2 p-value < 0.001
+
+Let's do the same analysis with conditional regression:
+```{r}
+clogit(case ~ breastfed + strata(set),
+       data = diabraz2) %>%
+  clogistic.display()
+```
+- OR is similar to MH.
+- Wald's test p < 0.001
+
+## 13: Conditional regression with confounder
+
+Investigate whether social class (social) or maternal education (meduc) confound the association between breastfeeding and diarrhoeal mortality.
+```{r}
+# Convert social and meduc into factors
+diabraz2 %<>% mutate(social2 = as.factor(social))
+diabraz2 %<>% mutate(meduc2 = as.factor(meduc))
+
+# Logistic regression with confounding covariates
+clogit(case ~ breastfed + social2 + meduc2 + strata(set),
+       data = diabraz2) %>%
+  clogistic.display()
+```
+- There is still very strong evidence for association between breastfeeding and diarrhoeal mortality even after adjusting for social class and maternal education (p < 0.001); actually, there is a slightly stronger association: OR went from 3.79 (crude) to 4.28 (adjusted)
+
+*Part 2: frequency matching*
+(Pen and paper only)
