@@ -1,33 +1,48 @@
 ---
-title: "R for SME: Logistic regression 3 (practical 11)"
-author: Andrea Mazzella
-output: html_document
+title: "R for SME 11: Logistic regression (interaction)"
+author: Andrea Mazzella [link](https://github.com/andreamazzella)
+output: html_notebook
 ---
 
-```{r - Load packages}
-library(readstata13)
+## Basics
+Load packages
+```{r}
+library(haven)
 library(epiDisplay)
 library(magrittr)
-library(tidyr)
-library(dplyr)
-options(digits = 3, scipen = 999) # Round all output to 3 decimal points and remove scientific notation
+library(tidyverse)
 ```
 
-*Part 1: mortality*
+# Part 1: mortality
 
-> 1
+## Data import, exploration, management
 
-Make sure you have the mortality.dta dataset in the same folder as this .rmd file.
-```{r - Import}
-mortality <- read.dta13("./mortality.dta", nonint.factors = T)
+Make sure you have the mortality.dta dataset in the same folder as this .rmd
+
+```{r Import data}
+mortality<-read_dta("./mortality.dta")
+mortality %<>% mutate_if(is.labelled,as_factor)
 ```
 
-```{r - Explore}
-head(mortality)
+```{r Explore data}
 glimpse(mortality)
 summary(mortality)
 View(mortality)
 ```
+
+Let's change the outcome into a labelled factor.
+```{r Factors and labelling}
+mortality %<>%
+  mutate(died = factor(
+    died,
+    levels = c(0, 1),
+    labels = c("alive", "dead")
+  ))
+```
+
+## Data analysis
+
+1.
 
 Analyse the association between visual impairment and death, stratifying on sex, using a Mantel-Haenszel approach.
 ```{r}
@@ -53,9 +68,10 @@ MH OR  5.43       3.69       8.00
 
 Homogeneity test p = 0.07: there is weak evidence of interaction between sex and visual impairment; the OR in females is about twice the OR in males.
 
-> 2
+2.
 
 Fit logistic regression models to estimate the same association, without interaction and with an interaction.
+NB: in this output for the model with interaction the interpretation of adj OR changes - it's a *stratum-specific* OR (in the baseline stratum of the other covariate)
 ```{r}
 # Model without interaction
 glm(died ~ vimp + sex,
@@ -69,19 +85,41 @@ glm(died ~ vimp * sex, # the asterisk marks the interaction
     family = binomial()) %>%
   logistic.display()
 ```
-Model without interaction:
-Adj OR (died/vimp//sex) = 5.53 (3.75,8.16)  (Wald's p < 0.001)
+- What is the OR for visual impairment adjusted for sex?
+Model without interaction: Adj OR (died/vimp//sex) = 5.53 (3.75,8.16)  (Wald's p < 0.001)
 
-Model with interaction:
-Adj OR (died/vimp//sex) = 3.95 (2.28,6.84)  (Wald's p < 0.001), vimp+female 2.04 (0.94,4.44)
+Now use the above output to calculate, by hand, the odds and OR in the four groups.
 
-*issue* the glm output doesn't show the equivalent of STATA's "_cons", so you can't calculate the table for OR in the four groups?
+- What is the OR for visual impairment *in males*?
+3.95
 
-> 3
+- What is the OR for females (vs males) *in the visually unimpaired*?
+0.77
 
-...
+- What is the interaction term?
+2.04
 
-> 4
+- What's the OR for visual impairment *in females*?
+_Issue:_ the logistic.display() output doesn't show the equivalent of STATA's "_cons", so you can't calculate the table for OR in the four groups. _Workaround_: you let R do the work, see below (Q3).
+
+- Compare answers with MH analysis above.
+
+3.
+
+Calculate the other stratum-specific OR (for females) by making females the baseline group.
+```{r}
+mortality$sex2 <- factor(mortality$sex,
+                         levels = c("Female", "Male")) # girl power
+glm(died ~ vimp * sex2,
+    data = mortality,
+    family = binomial()) %>%
+  logistic.display()
+mortality$sex2 <- factor(mortality$sex,
+                         levels = c("Male", "Female")) # the patriarchy strikes back
+```
+
+
+4.
 
 Fit a logistic regression model with interaction between visual impairment and sex, and control for age
 ```{r}
@@ -96,51 +134,57 @@ glm(died ~ vimp * sex + agegrp,
 - OR for visual impairment in females: ??
 - Impact on controlling for age: 
 
-> 5
+5.
 
-log(OR) - don't know how to get this.
+I'm not sure what the equivalent to Stats's lincom is. I'm also not sure why we need it, as one can calculate all stratum-specific ORs by changing the baseline group.
 
-*Part 2: Mwanza*
+# Part 2: Mwanza
+## Data import, exploration & management
 
-> 6
+6.
 
-Make sure you have the mwanza.dta dataset in the same folder as this .rmd file.
+Make sure you have the mwanza.dta dataset in the same folder as this .rmd, and load it. It contains data on HIV infection among women in Mwanza, Tanzania.
 ```{r}
-# Import data
-mwanza <- read.dta13("./mwanza.dta", nonint.factors = T)
-glimpse(mwanza)
+# Import the dataset
+mwanza <- read_dta("./mwanza.dta")
 ```
+
+```{r}
+#Familiarise yourself with the data
+View(mwanza)
+glimpse(mwanza)
+summary(mwanza)
+```
+
 
 Use logistic regression to assess whether the association between education (ed) and HIV (case) is modified by age (age1). First, relevel these variables:
 - ed into two groups: "none" and "any formal education";
 - age1 into three groups: 15-24, 25-34, 34+.
 ```{r}
 # Relevel "ed" and "age1"
-mwanza <- mwanza %>%
+mwanza %<>%
   mutate(ed2 = as.factor(
     case_when(
       ed == 1 ~ "none",
-      ed == 2 ~ "any formal",
-      ed == 3 ~ "any formal",
-      ed == 4 ~ "any formal"
+      TRUE ~ "any formal"
     )
   ))
-mwanza %$% table(ed,ed2)
+mwanza %$% table(ed, ed2)
 
-mwanza <-
-  mwanza %>% mutate(age3 = as.factor(
+mwanza %<>%
+  mutate(age3 = as.factor(
     case_when(
       age1 == 1 ~ "15-24",
       age1 == 2 ~ "15-24",
       age1 == 3 ~ "25-34",
       age1 == 4 ~ "25-34",
-      age1 == 5 ~ "34+",
-      age1 == 6 ~ "34+",
+      TRUE ~ "34+"
     )
   ))
-mwanza %$% table(age1,age3)
+mwanza %$% table(age1, age3)
 ```
-
+Now use MH and logistic regression to assess for interaction.
+Is there evidence of interaction between age and education?
 ```{r}
 # Crude OR
 mwanza %$% cc(case, ed2, graph = F)
@@ -157,7 +201,6 @@ logit_without <- glm(case ~ ed2 + age3,
 logit_interact <- glm(case ~ ed2 * age3,
                       data = mwanza,
                       family = binomial())
-
 lrtest(logit_without, logit_interact)
 ```
 
@@ -167,35 +210,32 @@ MH OR:    0.43 (0.29-0.63) p < 0.001
 Homogeneity test, p-value = 0.006. There is strong evidence for interaction between age and education.
 Interaction parameter: 0.2 in age group 25-34, 0.41 in age group 34+.
 
-- Is there evidence of interaction between age and education?
 
+Calculate age-specific ORs for the association between education and HIV.
 
+```{r}
+logistic.display(logit_interact)
+```
+- In the 15-24 age group, odds of HIV given no education = 1.03 odds of HIV given any formal education.
 
+```{r}
+# 25-34
+mwanza$age3 <- factor(mwanza$age3,
+                      levels = c("25-34", "34+", "15-24"))
+glm(case ~ ed2 * age3,
+    data = mwanza,
+    family = binomial()) %>% logistic.display()
 
+# 34+
+mwanza$age3 <- factor(mwanza$age3,
+                      levels = c("34+", "15-24", "25-34"))
+glm(case ~ ed2 * age3,
+    data = mwanza,
+    family = binomial()) %>% logistic.display()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# Change back
+mwanza$age3 <- factor(mwanza$age3,
+                      levels = c("15-24", "25-34", "34+"))
+```
+- In the 25-34 age group, odds of HIV given no education = 0.21 odds of HIV given any formal education.
+- In the 35+ age group, odds of HIV given no education = 0.42 odds of HIV given any formal education.
