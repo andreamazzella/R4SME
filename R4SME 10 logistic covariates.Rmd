@@ -1,47 +1,39 @@
 ---
-title: "R for SME: Logistic regression 2 (practical 10)"
-author: Andrea Mazzella
-output: html_document
+title: "R for SME 10: Logistic regression (covariates)"
+author: Andrea Mazzella [link](https://github.com/andreamazzella)
+output: html_notebook
 ---
 
-*Part 1: mortality*
+# Part 1: mortality
 
-> 0 Basics
-
-Install these packages if you haven't already
-```{r}
-install.packages("readstata13") 
-install.packages("epiDisplay") 
-install.packages("magrittr")
-install.packages("tidyr")
-install.packages("dplyr")
-```
-
+## Basics
 Load packages
 ```{r}
-library(readstata13)
+library(haven)
 library(epiDisplay)
 library(magrittr)
 library(tidyr)
 library(dplyr)
 ```
 
+## Data import, exploration, management
 
-Make sure you have the mortality.dta dataset in the same folder as this .rmd file.
-```{r}
-# Import data
-mortality<-read.dta13("./mortality.dta", nonint.factors = T)
+Make sure you have the mortality.dta dataset in the same folder as this .rmd
+
+```{r Import data}
+mortality<-read_dta("./mortality.dta")
+mortality %<>% mutate_if(is.labelled,as_factor)
 ```
 
-```{r}
-# Explore data
-head(mortality)
+```{r Explore data}
 glimpse(mortality)
 summary(mortality)
 View(mortality)
 ```
 
-> 1
+## Data analysis
+
+1.
 
 Does onchocercal infection appear to be associate with death?
 ```{r}
@@ -64,7 +56,7 @@ Crude OR for death in infected vs non-infected = 1.63 (1.08-2.48).
 Wald's test, p = 0.021
 Chi2 test, p = 0.02
 
-> 2 
+2. 
 
 Let's check if age is a potential confounder. Is our exposure (onchocerchal infection) somehow associated with age?
 ```{r}
@@ -74,7 +66,7 @@ mortality %$% tabpct(agegrp, mfpos, percent = "col", graph = F)
 
 Yes, it looks like the older people are affected more frequently. So we might analyse age group as a potential confounder.
 
-> 3
+3.
 
 Now stratify this association by age group.
 ```{r}
@@ -106,7 +98,7 @@ mortality %$%
 - Whilst the stratum-specific ORs are dissimilar, their CIs overlap, and the homogeneity test has a large p-value. Therefore, age group is not an effect modifier in the relation between infection and death.
 - Now that we have adjusted for age, the p-value for the chi2 test has increased to 0.06.
 
-> 4
+4.
 
 Now let's do the same but with logistic regression.
 ```{r}
@@ -120,11 +112,11 @@ glm(died ~ mfpos + agegrp,
 - The adjusted OR are very similar to the ones calculated with MH.
 - There's also a Wald's test p-value and a LR-test p-value.
 
-> 5
+5.
 
 (Summarise the results of your analysis)
 
-> 6
+6.
 
 Now let's run a more complex model, that also includes visual impairment (vimp).
 ```{r}
@@ -137,11 +129,11 @@ glm(died ~ vimp + mfpos + agegrp,
 - The OR associated with vimp means: once you account for infection and age group, the OR of death in visual impairment is 2.28 (1.44-3.58), and there is very strong evidence for this association (Wald's p < 0.001).
 - Does onchocercal infection appear to confound the association between visual impairment and odds of death?
 
-> 7
+7.
 
 - The OR associated with mfpos means: once you account for visual impairment and age group, the OR of death in microfilarial infection is 1.46 (0.95-2.23). There is weak evidence for this association (Wald's p = 0.09).
 
-> 8
+8.
 
 Perform a likelihood ratio test of the H0 that, after accounting for *age* and onchocercal infection, there is no association between visual impairment and odds of death.
 ```{r}
@@ -163,7 +155,7 @@ lrtest(logit_vimp_mfpos_agegrp, logit_mfpos_agegrp)
 - We could also have done a Wald's test (and I think this was already in the  logistic model at question 6, along with a LRT!)
 
 
-> 9
+9.
 
 Perform a likelihood ratio test of the H0 that, after accounting for onchocercal infection and *visual impairment*, there is no association between visual impairment and odds of death.
 ```{r}
@@ -178,23 +170,27 @@ lrtest(logit_vimp_mfpos_agegrp, logit_vimp_mfpos)
 The LRT p << 0.001. Therefore there is very, *very* strong evidence for an association between age and odds of death (don't you say?) after accounting for visual impairment and onchocercal infection.
 - It wouldn't have been possible to use a Wald's test, because the age group variable is not binary. And if you check in the output of the model at question 6, there is no single Wald's test, but there is only a LRT.
 
-> 10
+10.
 
 What do you conclude about the relationship between vimp and death?
 
-*Part 2: Mwanza*
+# Part 2: Mwanza
 
+## Data import, exploration & management
+
+Make sure you have the mwanza.dta dataset in the same folder as this .rmd, and load it. It contains data on HIV infection among women in Mwanza, Tanzania.
 ```{r}
 # Import the dataset
-mwanza <- read.dta13("./mwanza.dta", nonint.factors = TRUE)
+mwanza <- read_dta("./mwanza.dta")
 ```
 
 ```{r}
 #Familiarise yourself with the data
-head(mwanza)
+View(mwanza)
 glimpse(mwanza)
 summary(mwanza)
 ```
+
 The ed variable represents education but it's represented in four different categories. We need to transform it into a binary variable.
 ```{r}
 # Tabulate all possible values of ed
@@ -215,7 +211,7 @@ mwanza <- mwanza %>%
 mwanza %$% table(ed,ed2)
 ```
 
-> 11
+11.
 
 Cross-tabulate binary education against HIV infection and get the crude OR.
 
@@ -224,7 +220,7 @@ Cross-tabulate binary education against HIV infection and get the crude OR.
 mwanza %$% cc(case, ed2, graph = F)
 ```
 
-> 12
+12.
 
 We need to use the religion variable, but let's make sure that there are no missing values first.
 
@@ -235,7 +231,7 @@ mwanza %$% table(rel)
 mwanza$rel <- na_if(mwanza$rel, 9)
 ```
 
-> 13
+13.
 
 Estimate the OR for HIV/education adjusted for religion, using the Mantel-Haenszel approach
 ```{r}
@@ -244,7 +240,7 @@ mwanza %$% mhor(case, ed2, rel, graph = F)
 ```
 - The M-H-adjusted OR is 0.52 (0.35-0.77). There is strong evidence for this association (M-H chi2 p = 0.001).
 
-> 14
+14.
 
 Let's do the same with logistic regression
 
@@ -257,7 +253,7 @@ logistic.display(logit_confounder)
 ```
 - The adjusted OR is 0.49 (0.34,0.72). p < 0.001. This is similar to the MH results above.
 
-> 15
+15.
 
 Perform a LRT on the null hypothesis that, after controlling for religion, there is no association between education and HIV status.
 
