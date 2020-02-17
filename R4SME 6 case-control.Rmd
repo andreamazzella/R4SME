@@ -1,38 +1,37 @@
 ---
-title: "R for SME: Analysis of a case-control study"
-author: Andrea Mazzella
+title: "R for SME 6: Analysis of an unmatched case-control study"
+author: Andrea Mazzella [link](https://github.com/andreamazzella)
 output: html_notebook
 ---
- *Part 1: Introduction*
 
-> A) Basics
+# Part 1: Introduction
+## A) Basics
 
 Install these packages if you haven't already
 ```{r}
-install.packages("readstata13")
-install.packages("magrittr")
 install.packages("epiDisplay")
 install.packages("pubh")
-install.packages("tidyverse")
+install.packages("statix")
 ```
 
 Load packages
 - Did you know? library() and require() are equivalent.
 ```{r}
-require(readstata13) # to import dta files
+require(haven)
 library(magrittr) # %$% pipe
 require(epiDisplay) # Epi functions
 library(pubh) # chi-for-trend
-require(tidyverse) # %>% pipe, data management...
+require(rstatix) # test-for-trend
+library(tidyverse) # %>% pipe, data management...
 ```
 
 
-> B) Data exploration
+## B) Data exploration & management
 
-Load the "mwanza" dataset. It contains data on HIV infection among women in Mwanza, Tanzania.
+Make sure you have the mortality.dta dataset in the same folder as this .rmd, and load it. It contains data on HIV infection among women in Mwanza, Tanzania.
 ```{r}
 # Import the dataset
-mwanza <- read.dta13("./mwanza.dta", nonint.factors = TRUE)
+mwanza <- read_dta("./mwanza.dta")
 ```
 
 Rather unhelpfully, the values are not labelled, and the Stata metadata file format, .hlp, can only be read in Stata or in Windows 7.
@@ -47,7 +46,7 @@ Rather unhelpfully, the values are not labelled, and the Stata metadata file for
 Solution:
 ```{r}
 #Familiarise yourself with the data
-head(mwanza)
+View(mwanza)
 glimpse(mwanza)
 summary(mwanza)
 ```
@@ -55,7 +54,7 @@ summary(mwanza)
 1. Recategorise the variables "ed" and "age1" into two new variables called ed2 and age2 so that:
 - ed2 is binary (1 = none; 2 = any formal education)
 - age2 is grouped this way: 1=15-24, 2=25-34, 3=35+ years.
-Then label the variables' values.
+
 ```{r}
 # Tabulate all possible values of ed and age1
 
@@ -78,7 +77,7 @@ mwanza %$% table(ed)
 mwanza %$% table(age1)
 
 # Recategorise and label education level
-mwanza <- mwanza %>%
+mwanza %<>%
   mutate(ed2 = as.factor(
     case_when(
       ed == 1 ~ "none",
@@ -89,7 +88,7 @@ mwanza <- mwanza %>%
   ))
 
 # Recategorise and label age
-mwanza <- mwanza %>%
+mwanza %<>%
   mutate(age2 =  as.factor(
     case_when(
       age1 <= 2 ~ "15-24",
@@ -102,6 +101,22 @@ mwanza <- mwanza %>%
 mwanza %$% table(ed,ed2)
 mwanza %$% table(age1,age2)
 ```
+
+Also, make "case" a factor.
+
+
+```{r}
+# Make "case" a factor and label it
+mwanza %<>%
+  mutate(case = factor(case,
+    levels = c(0, 1),
+    labels = c("Control", "HIV_case")
+  ))
+summary(mwanza$case)
+```
+
+
+## C) Data analysis
 
 2. Obtain the crude OR for education as a risk factor for HIV. The commands are from {epiDisplay}: tabpct() and cc().
 - Note that cc() also calculates the Fisher's exact test automatically, unlike Stata.
@@ -140,28 +155,31 @@ mwanza %$% cc(case, ed2, graph = F)
 Possible solution:
 ```{r}
 # Obtain tables of HIV/education stratified by age
+print("15-24 years stratum")
 mwanza %>%
   filter(age2 == "15-24") %$%
   tabpct(case, ed2, percent= "row", graph = F)
 
+print("25-34 years stratum")
 mwanza %>%
   filter(age2 == "25-34") %$%
   tabpct(case, ed2, percent= "row", graph = F)
 
+print("35+ years stratum")
 mwanza %>%
   filter(age2 == "35+") %$%
   tabpct(case, ed2, percent= "row", graph = F)
 
 # Estimate ORs of HIV/education by different age groups
 mwanza %$% epiDisplay::mhor(case, ed2, age2, graph = F)
+
 ```
 
 4. Assess whether religion is a confounder or an effect modifier between education and HIV infection.
-- NB: rel has a missing value coded as "9". The dplyr::na_if() function replaces all values to replace with NA (a missing value in R).
-- If you want some extra coding fun, you can change the rel variable into categorical and label it. 1 = Muslim, 2 = Catholic, 3 = Protestant, 4 = Other.
+- The "rel" variable is coded as such: 1 = Muslim, 2 = Catholic, 3 = Protestant, 4 = Other, 9 = missing value.
 
 ```{r}
-# Replace rel "9" with "NA"
+# Recode missing values (9) as NA
 
 
 # Exploratory tabulation
@@ -170,45 +188,53 @@ mwanza %$% epiDisplay::mhor(case, ed2, age2, graph = F)
 # Obtain tables of HIV/education stratified by religion
 
 
-# Estimate ORs of HIV/education by different age groups
+# Estimate ORs of HIV/education by different religions
 
 
 ```
 
 Possible solution:
 ```{r}
-# Replace rel "9" with "NA"
-mwanza$rel <- na_if(mwanza$rel, 9)
+# Recode missing values (9) as NA
+summary(mwanza$rel)
+
+mwanza %<>% 
+  mutate(rel = na_if(rel, 9))
+
+summary(mwanza$rel)
 
 # Exploratory tabulation
 mwanza %$% tabpct(case, rel, percent= "row", graph = F)
 mwanza %$% tabpct(ed2, rel, percent= "row", graph = F)
 
 # Obtain tables of HIV/education stratified by religion
+print("Muslim")
 mwanza %>%
   filter(rel == "1") %$%
   tabpct(case, ed2, percent= "row", graph = F)
 
+print("Catholic")
 mwanza %>%
   filter(rel == "2") %$%
   tabpct(case, ed2, percent= "row", graph = F)
 
+print("Protestant")
 mwanza %>%
   filter(rel == "3") %$%
   tabpct(case, ed2, percent= "row", graph = F)
 
+print("Other")
 mwanza %>%
   filter(rel == "4") %$%
   tabpct(case, ed2, percent= "row", graph = F)
 
-# Estimate ORs of HIV/education by different age groups
+# Estimate ORs of HIV/education by different religions
 mwanza %$% epiDisplay::mhor(case, ed2, rel, graph = F)
 ```
 
 5. Dealing with missing values for a potential confounder (npa)
 The variable npa contains information on the number of sexual partners. It's coded: 1 (0-1), 2 (2-4), 3 (5-9), 4 (10-19), 9 (missing value).
-- Tell R which values are missing
-- ...
+- Tell R which values are missing. Observations with missing values will automatically be excluded from this analysis.
 ```{r}
 
 ```
@@ -225,12 +251,6 @@ mwanza %$% cc(case, ed2, graph = F)
 
 # Estimate ORs of HIV/education by different age groups
 mwanza %$% epiDisplay::mhor(case, ed2, npa, graph = F)
-
-
-
-################ I'm not sure if R automatically excludes NAs from the analysis. If not, I don't know how to tell it to avoid NAs.
-
-
 ```
 
 
@@ -243,73 +263,35 @@ mwanza %$% epiDisplay::mhor(case, ed2, npa, graph = F)
 Possible solution:
 ```{r}
 # Duplicate the npa variable and change its values
-mwanza <- mwanza %>% mutate(npa2 = npa) %>%
-  mutate(npa2 = recode_factor(
+
+mwanza %<>% 
+  mutate(npa2 = npa) %>%
+  mutate(npa2 = recode(
     npa2,
-    `1` = "0",
-    `2` = "3",
-    `3` = "7",
-    `4` = "15", .ordered = TRUE
+    `1` = 0,
+    `2` = 3,
+    `3` = 7,
+    `4` = 15
   ))
-
-glimpse(mwanza$npa2)
-summary(mwanza$npa2)
-
 mwanza %$% table(npa, npa2)
-
-
-#...........
-
-
-
-
-
-
 ```
 
 - Perform a chi-squared test for trend of odds for the exposure npa2 and outcome.
 ```{r}
 # Odds ratio for each partner-number group compared to those with 0/1 partner.
-mwanza %>% odds_trend(case ~ npa2, data = .)
+odds_trend(case ~ npa2, data = mwanza)
 
-
-# Test for trend - in base R
-count_hiv_npa2 <- mwanza %$% table(npa2, case)[, 1]
-
-count_all_npa2 <-
-  mwanza %$% table(npa2, case)[, 1] + mwanza %$% +table(npa2, case)[, 2]
-
-prop.trend.test(count_hiv_npa2, count_all_npa2)
-
-# I haven't figured out how to use prop.trend.test() without using base R to create its input - I'm sure it's doable with {dplyr} somehow?
-
-# There's also a prop_trend_test() function in {rstatix} that takes a different input and is meant to be more pipe-friendly but idk.
+# Test for trend - {statix}
+case_by_npa2 <- mwanza %$% table(case, npa2)
+prop_trend_test(case_by_npa2)
 ```
 
 - Perform a test for departure from trend for npa2.
 ```{r}
+# Calculate difference between chi2 and trend test
+departure_chi <-
+  chisq_test(case_by_npa2)$statistic - prop_trend_test(case_by_npa2)$statistic
 
-# Test for departure from trend - base R
-dep_trend_chi <- 
-  (chisq.test(table(mwanza$npa2, mwanza$case)))$statistic - (prop.trend.test(count_hiv_npa2, count_all_npa2))$statistic #this calculates a chisq test and a test for trend and substracts the chi2 value of the latter from the former
-
-dep_trend_chi # This is the chi2 of the test for departure from trend
-
-pchisq(dep_trend_chi, 2)#it says X-squared but it's actually the p-value...
-
-# How to do with tidyverse? Help
+# Test for departure from linear trend
+pchisq(departure_chi, 2)
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
