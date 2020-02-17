@@ -1,0 +1,334 @@
+---
+title: "R for SME 12: Logistic regression (quantitative exposures)"
+author: Andrea Mazzella [link](https://github.com/andreamazzella)
+output: html_notebook
+---
+
+## Basics
+Load packages
+```{r Load packages}
+library(haven)
+library(pubh)
+library(rstatix)
+library(epiDisplay)
+library(magrittr)
+library(tidyverse)
+```
+
+# Part 1: mortality
+
+## Data import, exploration, management
+
+1.
+
+Make sure you have the mortality.dta dataset in the same folder as this .rmd
+
+```{r Import data}
+mortality<-read_dta("./mortality.dta")
+mortality %<>% mutate_if(is.labelled,as_factor)
+```
+
+1a.
+
+Explore the data.
+What type of variables are "systolic" and "died"?
+```{r Explore data}
+glimpse(mortality)
+summary(mortality)
+View(mortality)
+```
+- systolic is a quantitative variable
+- died is a binary variable coded as 0/1, but its class is "double" and not "factor".
+
+```{r Transform "died" into a factor variable}
+mortality %<>%
+  mutate(died = factor(
+    died,
+    levels = c(0, 1),
+    labels = c("alive", "dead")
+  ))
+```
+
+
+Plot systolic BP against death. What does the plot show?
+```{r Visualising}
+# Scatterplot
+mortality %>% ggplot(aes(x = systolic, y = died)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Systolic blood pressure and death",
+       x = "Systolic blood pressure",
+       y = "Death")
+## I am not sure why that's what they wanted us to do in the STATA practical. A scatteplot is only helpful with two continuous variables. With 1 continuous and 1 categorical, you use Box plots, which can give you a vague idea of how did sBP compare in dead vs alive.
+
+# Box-and-whiskers plot
+mortality %>% ggplot(aes(x = died, y = systolic)) +
+  geom_boxplot() +
+  labs(title = "Systolic blood pressure and death",
+       y = "Systolic blood pressure",
+       x = "Death") +
+  theme_bw() +
+  coord_flip()
+```
+
+1b.
+
+Group systolic into three levels and add labels.
+- <120: normal
+- 120-139: pre-hypertension
+- 140+: hypertension
+```{r Categorise "systolic"}
+mortality %<>%
+  mutate(systolic_grp = cut(
+    systolic,
+    breaks = c(0, 119, 139, +Inf),
+    labels = c("normal", "pre-hypertension", "hypertension")
+  ))
+
+# Check it worked ok
+mortality %$% table(systolic, systolic_grp)
+```
+
+Explore the relation between systolic_grp and died.
+```{r Crosstab systolic_grp and died}
+mortality %$% tabpct(systolic_grp, died, percent = "row", graph = F)
+```
+- A higher percentage of hypertensives died than people with normal systolic BP.
+
+1c, 1d.
+
+Calculate the log{odds} of death in each sBP group, and plot them manually on a graph, then draw a line by eye to fit these points.
+_Issue:_ I don't know how to get odds in R.
+_Workaround:_ odds_trend() gives you the OR for each group of systolic BP and the baseline (normal systolic BP):
+
+```{r OR}
+# OR
+odds_trend(died ~ systolic_grp, data = mortality)
+
+# Test for trend
+death_by_BP <- mortality %$% table(died, systolic_grp)
+prop_trend_test(death_by_BP)
+```
+- pre-hypertension: OR 1.32 (0.87-2.00)
+- hypertension: OR 3.63 (2.38-5.52)
+- this command also gives you a graph (but not on the log scale)
+- chi2 test for trend: p <0.001
+
+1e.
+
+Fit a logistic regression model for death, with exposure being grouped sBP treated as a quantitative variable. In order to do this, you simply need to transform the variable back to a numeric variable, with values of 1, 2, 3. Once you do that, the glm() command is the same.
+
+```{r Logistic regression with a linear relation}
+# Recode systolic_grp as numeric
+mortality %<>%
+  mutate(systolic_quant = as.numeric(systolic_grp))
+
+# Check
+mortality %$% table(systolic_grp, systolic_quant)
+
+# Logistic regression with linear relation - log odds scale
+logit_linear <- glm(died ~ systolic_quant,
+                    data = mortality,
+                    family = binomial())
+logit_linear
+```
+- What is the interpretation of the estimates for grouped sBP?
+
+
+1f.
+
+Now do the same in the odds (ie: non-log) scale.
+```{r}
+# Logistic regression with linear relation - odds scale display
+logistic.display(logit_linear)
+```
+- What is the interpretation of the estimates for grouped sBP now?
+
+1g.
+
+Fit a model with grouped sBP assuming factors and perform a LRT on the following hypotheses:
+- H0: the effect of grouped sBP on log(odds) of death is linear;
+- H1: the relationship is not linear.
+```{r}
+logit_nonlin <- glm(died ~ systolic_grp,
+                    data = mortality,
+                    family = binomial())
+logistic.display(logit_nonlin)
+
+# LRT
+lrtest(logit_linear, logit_nonlin)
+```
+
+1h.
+
+Summarise your findings
+- There is very strong evidence for a linear association between grouped sBP and death; OR = 1.86 (1.49,2.32)  Wald's p < 0.001 
+- There is only weak evidence for a non-linear relationship between systolic BP and death (LRT p = 0.06)
+
+1i.
+
+Recode the sBP groups so that it's a quantitative variable, and each group contains a mid-point value in mmHg of that group.
+Reminder of systolic BP categories:
+- <120: normal
+- 120-139: pre-hypertension
+- 140+: hypertension
+```{r}
+# Recode the variable to numerical with (arbitrary) midpoints
+mortality %<>%
+  mutate(systolic_grp_mid = as.numeric(
+    case_when(
+      systolic_grp == "normal" ~ 110,
+      systolic_grp == "pre-hypertension" ~ 130,
+      systolic_grp == "hypertension" ~ 150
+    )
+  ))
+
+# Check you haven't made a mess
+mortality %$% table(systolic_grp, systolic_grp_mid)
+```
+
+Now fit the equivalent model to 1f.
+```{r}
+glm(died ~ systolic_grp_mid,
+    data = mortality,
+    family = binomial()) %>%
+  logistic.display()
+```
+- What is the interpretation of the estimate for grouped sBP now?
+
+2a.
+
+Consider a model with
+- outcome: death;
+- exposure: visual impairment;
+- confounder: age (agegrp)
+Does our estimate of effect of visual impairment differ if we treat age as quantitative rather than categorical ?
+Fit a linear and a non-linear model.
+
+```{r}
+mortality %$% class(agegrp)
+
+# Transform agegrp into a quantitative variable
+mortality %<>%
+  mutate(agegrp_lin = as.numeric(agegrp))
+
+mortality %$% table(agegrp, agegrp_lin)
+mortality %$% class(agegrp_lin)
+
+# Quantitative model
+logit_linear2 <- glm(died ~ vimp + agegrp_lin,
+                     data = mortality,
+                     family = binomial())
+logistic.display(logit_linear2)
+
+# Categorical model
+logit_nonlin2 <- glm(died ~ vimp + agegrp,
+                     data = mortality,
+                     family = binomial())
+logistic.display(logit_nonlin2)
+
+# LRT
+lrtest(logit_linear2, logit_nonlin2)
+```
+- The adjusted OR are very similar in the two models
+- LRT p-value = 0.786
+- There is no evidence that for non-linearity.
+
+
+2b.
+
+Perform a LRT for the interaction between vimp and agegrp treated as a linear effect.
+Is there evidence that the association of visual impairment on death differs by age group, where age group is treated as a linear effect?
+```{r}
+mortality %<>%
+  mutate(
+    agegrp2 =
+      case_when(
+        agegrp == "15-34" ~ 0,
+        agegrp == "35-54" ~ 1,
+        agegrp == "55-64" ~ 2,
+        agegrp == "65+" ~ 3
+      )
+  )
+mortality %$% table(agegrp2, agegrp)
+
+# Logistic regression with interaction
+glm(died ~ vimp * agegrp2,
+    data = mortality,
+    family = binomial()) %>%
+  logistic.display()
+
+# LRT
+
+
+# Calculate stratum-specific ORs for visual impairment for the four age group strata
+
+
+
+```
+
+3.
+
+Using the Mwanza dataset (MWANZA.dta), investigate the association between HIV infection and number of injections in the past year.
+
+```{r}
+# Import the dataset
+mwanza <- read_dta("./mwanza.dta")
+```
+
+```{r}
+#Familiarise yourself with the data
+View(mwanza)
+glimpse(mwanza)
+summary(mwanza)
+```
+
+The variable "inj" is coded as follows:
+1: does not inject
+2-4: increasing number of injections per year
+9: missing value
+```{r}
+mwanza %<>%
+  mutate(hiv = as.factor(case_when(case == 1 ~ "HIV+",
+                                   case == 0 ~ "negative")))
+
+# Replace inj "9" with "NA"
+mwanza$inj <- na_if(mwanza$inj, 9)
+table(mwanza$inj)
+mwanza %$% tabpct(hiv, inj, graph = F)
+
+# Logistic regression including the zero group
+glm(hiv ~ inj,
+    data = mwanza,
+    family = binomial()) %>%
+  logistic.display()
+
+```
+
+Remember that the zero group should be excluded in order to confirm that a trend with increasing numbers is not simply induced by a difference between the zero category and the rest.
+
+```{r}
+# Logistic regression excluding the zero group
+mwanza %>%
+  filter(inj != 1) %>% # this line temporarily removes all observations with a value of `1` in "inj"
+  glm(hiv ~ inj,
+      data = .,
+      family = binomial()) %>%
+  logistic.display()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
