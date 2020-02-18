@@ -8,5 +8,6 @@ R notebooks translating LSHTM's Statistical Methods in Epidemiology practicals f
 * Practical 11: Logistic regression (interaction)
 * Practical 12: Logistic regression (quantitative exposures)
 * Practical 13: Analysis of individually matched case-control studies
+* Practical 15: Strategies of analysis
 
 The datasets are LSHTM's.
