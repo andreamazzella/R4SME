@@ -1,0 +1,379 @@
+---
+title: "R for SME 15: Strategies of analysis"
+author: [Andrea Mazzella](https://github.com/andreamazzella)
+output: html_document
+---
+
+```{r Load packages}
+library(haven)
+library(pubh)
+library(epiDisplay)
+library(magrittr)
+library(tidyverse)
+```
+
+## Data import and exploration
+
+Make sure you have the mortality.dta dataset in the same folder as this .rmd file.
+```{r Import}
+mortality <- read_dta("./mortality.dta")
+mortality %<>% mutate_if(is.labelled,as_factor)
+```
+
+Explore the data.
+- What study design?
+- How many individuals? 
+```{r Explore}
+glimpse(mortality)
+summary(mortality)
+View(mortality)
+```
+
+## Data management
+
+- How many variables?
+- Which variables code for the main exposure, outcome?
+- Which are your fixed confounders?
+- What are the other potential confounders?
+- How are these variables coded?
+- Which variables do we need to recode, rename, categorise?
+
+```{r Data management}
+# died -> death (factor)
+mortality %<>%
+  mutate(death = factor(died,
+                        levels = c(0, 1),
+                        labels = c("No", "Yes")))
+mortality %$% table(death, died)
+
+# District -> factor
+mortality$district <- as.factor(mortality$district)
+mortality %$% table(district)
+
+# Compound size
+mortality %<>% mutate(compound_grp = cut(
+  compound_size,
+  breaks = c(0, 9, 19, +Inf),
+  labels = c("1-9", "10-19", "20-55")
+))
+mortality %$% table(compound_size, compound_grp)
+mortality %$% tabpct(compound_grp, death, percent = "row", graph = F)
+mortality %$% tabpct(compound_grp, vimp, percent = "row", graph = F)
+
+# Ethnic: simplify by recoding -> ethnic2
+mortality %$% table(ethnic)
+
+mortality %<>%
+  mutate(
+    ethnic2 = recode(
+      ethnic,
+      "Fulani" = "Other",
+      "Gwari" = "Other",
+      "Kiwollo" = "Other",
+      " Surubu" = "Other"
+    )
+  )
+mortality %$% table(ethnic, ethnic2)
+mortality %$% table(ethnic2)
+
+
+# Occupation: simplify by recoding -> occ_sector
+mortality %$% table(occupation)
+mortality %$% tabpct(occupation, death, percent = "row", graph = F)
+mortality %$% tabpct(occupation, vimp, percent = "row", graph = F)
+
+mortality %<>%
+  mutate(
+    occ_sector = recode(
+      occupation,
+      "Farmer" = "Agriculture",
+      "Fishing" = "Agriculture",
+      "Hunting" = "Agriculture",
+      "Artisan" = "Other",
+      "Trader" = "Service",
+      "Homemaker" = "Service",
+      "Priest/Imam" = "Other",
+      "Teacher/Civil servant, etc." = "Other",
+      "Traditional healer" = "Other",
+      "Child below school age" = "Other",
+      "Unemployed" = "Other",
+      "Student" = "Other"
+    )
+  )
+mortality %$% tabpct(occ_sector, death, percent = "row", graph = F)
+
+# Education
+mortality %$% table(education)
+mortality %$% tabpct(education, death, percent = "row", graph = F)
+mortality %$% tabpct(education, vimp, percent = "row", graph = F)
+
+mortality %<>%
+  mutate(
+    education_grp = recode(
+      education,
+      "Koranic education only" = "Adult/Koranic education",
+      "Adult education only" = "Adult/Koranic education",
+      "Primary" = "Formal education",
+      "Secondary" = "Formal education",
+      "Post secondary" = "Formal education"
+    )
+  )
+mortality %$% table(education, education_grp)
+mortality %$% table(education_grp)
+mortality %$% tabpct(education_grp, death, percent = "row", graph = F)
+mortality %$% tabpct(education_grp, vimp, percent = "row", graph = F)
+
+# Systolic
+mortality %<>% mutate(systolic_grp = cut(
+  systolic,
+  breaks = c(0, 119, 139, +Inf),
+  labels = c("normal", "pre-hypertension", "hypertension")
+))
+mortality %$% table(systolic, systolic_grp)
+class(mortality$systolic_grp)
+
+# HR
+mortality %<>% mutate(tachycardia = cut(
+  pulse,
+  breaks = c(0, 99, +Inf),
+  labels = c("normal", "tachycardia")
+))
+mortality %$% table(pulse, tachycardia)
+mortality %$% tabpct(tachycardia, death, percent = "row", graph = F)
+mortality %$% tabpct(tachycardia, vimp, percent = "row", graph = F)
+```
+
+
+## Descriptive analysis
+
+NB: an alternative way to create a quick Table 1 is tableone::CreateTableOne() - check it out! (Thanks, Julian!)
+### Describe the sample in terms of outcome and exposure
+
+- What's the incidence risk of death?
+- What's the prevalence of visual impairment?
+```{r}
+mortality %$% tab1(death, cum.percent = F, graph = F)
+
+mortality %$% tab1(vimp, cum.percent = F, graph = F)
+```
+
+### Describe the sample in terms of the age and sex
+
+```{r}
+# Age
+mortality %$% tab1(agegrp, cum.percent = F, graph = F)
+
+# Sex
+mortality %$% tab1(sex, cum.percent = F, graph = F)
+
+# Age and sex
+mortality %>% ggplot(aes(agegrp)) +
+  geom_bar(aes(fill = sex)) +
+  scale_fill_viridis_d(option = "D") +
+  labs(title = "Age and sex distribution", x = "Age", y = "frequency")
+```
+
+### Describe the sample in terms of geography
+
+```{r}
+# Area
+mortality %$% tab1(area, cum.percent = F, graph = F)
+
+# District
+mortality %$% tab1(district, cum.percent = F, graph = F)
+
+# Village ID number
+mortality %$% tab1(vcode, cum.percent = F, graph = F) # useless, too many villages
+```
+
+### Describe sample in terms of socio-economic status
+
+```{r}
+# Compound size
+print("Compound size")
+mortality %$% summary(compound_size)
+mortality %>% ggplot(aes(x = compound_size)) +
+  geom_histogram()
+
+# Ethnic origin
+mortality %$% tab1(ethnic2, cum.percent = F, graph = F)
+
+# Religion
+mortality %$% tab1(religion, cum.percent = F, graph = F)
+
+# Occupation
+mortality %$% tab1(occ_sector, cum.percent = F, graph = F)
+
+# Education
+mortality %$% tab1(education_grp, cum.percent = F, graph = F)
+```
+
+### Describe sample in terms of medical status
+
+```{r}
+# Systolic BP
+mortality %>% ggplot(aes(x = systolic)) +
+  geom_histogram()
+
+mortality %$% tab1(systolic_grp, cum.percent = F, graph = F)
+
+# Diastolic BP
+mortality %>% ggplot(aes(x = diastolic)) +
+  geom_histogram()
+
+# Mean arterial BP
+mortality %>% ggplot(aes(x = map)) +
+  geom_histogram()
+
+# HR
+mortality %>% ggplot(aes(x = pulse)) +
+  geom_histogram()
+
+mortality %$% tab1(tachycardia, cum.percent = F, graph = F)
+
+# Weight
+mortality %>% ggplot(aes(x = weight)) +
+  geom_histogram()
+print("Weight")
+print("mean")
+mortality %$% mean(weight, na.rm = T)
+print("sd")
+mortality %$% sd(weight, na.rm = T)
+
+# Height
+mortality %>% ggplot(aes(x = height)) +
+  geom_histogram()
+print("Height")
+print("mean")
+mortality %$% mean(height, na.rm = T)
+print("sd")
+mortality %$% sd(height, na.rm = T)
+
+# BMI
+mortality %>% ggplot(aes(x = bmi)) +
+  geom_histogram()
+mortality %$% tab1(bmigrp, cum.percent = F, graph = F)
+
+# Microfilaria
+mortality %>% ggplot(aes(x = mfpermg)) +
+  geom_histogram()
+mortality %$% tab1(mfpos, cum.percent = F, graph = F)
+mortality %$% tab1(mfgrp, cum.percent = F, graph = F)
+```
+
+## Crude analysis
+
+- What is the crude OR for death in the visually impaired?
+```{r}
+# With chi-squared test
+mortality %$% cc(death, vimp, graph = F)
+
+# With logistic regression
+glm(death ~ vimp,
+    data = mortality,
+    family = binomial()) %>% logistic.display()
+```
+
+## Stratified analysis - MH method
+
+```{r}
+# Age
+mortality %$% epiDisplay::mhor(death, vimp, agegrp, graph = F)
+
+# Sex
+mortality %$% epiDisplay::mhor(death, vimp, sex, graph = F)
+```
+
+```{r}
+# Area
+mortality %$% epiDisplay::mhor(death, vimp, area, graph = F)
+
+# District
+mortality %$% epiDisplay::mhor(death, vimp, district, graph = F)
+
+# Village number
+mortality %$% epiDisplay::mhor(death, vimp, vcode, graph = F)
+
+```
+
+```{r}
+# Compound size
+mortality %$% epiDisplay::mhor(death, vimp, compound_grp, graph = F)
+
+# Ethnic origin
+mortality %$% epiDisplay::mhor(death, vimp, ethnic2, graph = F)
+
+# Religion
+mortality %$% epiDisplay::mhor(death, vimp, religion, graph = F)
+
+# Occupation
+mortality %$% epiDisplay::mhor(death, vimp, occ_sector, graph = F)
+
+# Education
+mortality %$% epiDisplay::mhor(death, vimp, education_grp, graph = F)
+```
+
+```{r}
+# Systolic BP
+mortality %$% epiDisplay::mhor(death, vimp, systolic_grp, graph = F)
+
+# Diastolic BP
+# Mean arterial BP
+
+# HR
+mortality %$% epiDisplay::mhor(death, vimp, tachycardia, graph = F)
+
+# Weight
+# Height
+
+# BMI
+mortality %$% epiDisplay::mhor(death, vimp, bmigrp, graph = F)
+
+# Microfilaria
+mortality %$% epiDisplay::mhor(death, vimp, mfpos, graph = F)
+mortality %$% epiDisplay::mhor(death, vimp, mfgrp, graph = F)
+```
+
+
+## Stratified analysis - logistic regression
+
+A possible model:
+```{r}
+# Age, hypertension, BMI
+logit_without <- glm(death ~ vimp + agegrp + systolic_grp + bmigrp,
+    data = mortality,
+    family = binomial())
+logistic.display(logit_without)
+```
+- How do you interpret these results?
+
+## Analysis for interaction - logistic regression
+
+```{r}
+# Interaction between vimp and age
+logit_with_age <- glm(death ~ vimp * agegrp + systolic_grp + bmigrp,
+    data = mortality,
+    family = binomial())
+logistic.display(logit_with_age)
+
+lrtest(logit_with_age, logit_without)
+```
+
+```{r}
+# Interaction between vimp and systolic
+logit_with_sys <- glm(death ~ vimp * systolic_grp + agegrp + bmigrp,
+                      data = mortality,
+                      family = binomial())
+logistic.display(logit_with_sys)
+
+lrtest(logit_with_sys, logit_without)
+```
+
+```{r}
+# Interaction between vimp and BMI
+logit_with_BMI <- glm(death ~ vimp * bmigrp + systolic_grp + agegrp,
+    data = mortality,
+    family = binomial())
+logistic.display(logit_with_BMI)
+lrtest(logit_with_BMI, logit_without)
+```
