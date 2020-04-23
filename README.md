@@ -10,4 +10,4 @@ R notebooks translating LSHTM's Statistical Methods in Epidemiology practicals f
 * Practical 13: Analysis of individually matched case-control studies
 * Practical 15: Strategies of analysis
 
-The datasets are LSHTM's.
+The datasets (not available here) are LSHTM's.
